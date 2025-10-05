@@ -1,6 +1,8 @@
 using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
 using Microsoft.CodeAnalysis;
+using System.Xml;
+using System.Text;
 
 namespace RoslynAssemblyAnalyzerMcp;
 
@@ -168,6 +170,39 @@ internal static class Extensions
         var modifiersStr = modifiers.Count != 0 ? $"{string.Join(" ", modifiers)} " : "";
 
         return $"{accessibility} {modifiersStr}event {evt.Type.ToDisplayString()} {evt.Name}";
+    }
+
+    /*
+        /// <summary>
+        /// comment
+        /// </summary>
+        /// <returns></returns>
+     */
+    public static string? GetCommentText(this ISymbol symbol, int indent = 0)
+    {
+        var xmlString = symbol.GetDocumentationCommentXml();
+        if (string.IsNullOrWhiteSpace(xmlString))
+            return null;
+
+        var xml = new XmlDocument();
+        xml.LoadXml(xmlString);
+        var root = xml.DocumentElement;
+        if (root is null)
+            return null;
+
+        StringBuilder s = new();
+        foreach (var line in root.InnerXml.EnumerateLines())
+        {
+            s.Append($"{new string(' ', indent)}/// ");
+            s.Append(line);
+            s.AppendLine();
+        }
+        for (int i = 1; i <= 2; i++)
+        {
+            if (s[^1] is '\r' or '\n')
+                s.Remove(s.Length - 1, 1);
+        }
+        return s.ToString();
     }
 
     private static string FormatDefaultValue(object? value)

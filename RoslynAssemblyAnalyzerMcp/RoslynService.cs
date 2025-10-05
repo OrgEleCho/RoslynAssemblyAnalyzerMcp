@@ -5,6 +5,7 @@ using NuGet.Common;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.Caching.Memory;
+using System.Globalization;
 
 namespace RoslynAssemblyAnalyzerMcp;
 
@@ -89,8 +90,15 @@ public class RoslynService
 
     public AssemblyAnalysisInfo? AnalyzeAssembly(string packageId, string packageVersion, string assemblyName, string? targetFramework, string assemblyPath, bool isVersionLatest)
     {
+        DocumentationProvider documentationProvider = DocumentationProvider.Default;
+        var xmlDocumentFilePath = Path.ChangeExtension(assemblyPath, "xml");
+        if (File.Exists(xmlDocumentFilePath))
+        {
+            documentationProvider = XmlDocumentationProvider.CreateFromFile(xmlDocumentFilePath);
+        }
+
         // 使用 Roslyn 分析程序集
-        var reference = MetadataReference.CreateFromFile(assemblyPath);
+        var reference = MetadataReference.CreateFromFile(assemblyPath, documentation: documentationProvider);
         var compilation = CSharpCompilation.Create("_")
             .AddReferences(reference);
 

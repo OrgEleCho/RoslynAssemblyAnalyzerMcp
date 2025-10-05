@@ -396,7 +396,7 @@ public static class RoslynMcp
     }
 
 
-    [McpServerTool, Description("获取dotnet程序集中指定类型的所有成员详细信息(方法 属性 字段 事件等)")]
+    [McpServerTool, Description("获取dotnet程序集中指定类型的所有成员详细信息(方法 属性 字段 事件 以及对应的注释等)")]
     public static string GetTypeMembers(
         [Description(PackageIdDescription)] string packageId,
         [Description("程序集文件名")] string assemblyName,
@@ -461,6 +461,9 @@ public static class RoslynMcp
             }
 
             result.AppendLine();
+            result.AppendLine(targetType.GetCommentText(2));
+
+            result.AppendLine();
             result.AppendLine("成员列表:");
             result.AppendLine();
 
@@ -502,12 +505,13 @@ public static class RoslynMcp
                 foreach (var ctor in constructors.OrderBy(c => c.Parameters.Length))
                 {
                     var constructorMethodDisplayText = ctor.ToConstructorFullDisplayText();
+                    result.AppendLine(ctor.GetCommentText(2));
                     result.AppendLine($"    {constructorMethodDisplayText};");
 
                     totalShown++;
                 }
+                result.AppendLine();
             }
-            result.AppendLine();
 
             // 显示方法
             if (showMethods && methods.Count != 0)
@@ -517,6 +521,7 @@ public static class RoslynMcp
                 foreach (var method in methods)
                 {
                     var methodDisplayText = method.ToFullDisplay();
+                    result.AppendLine(method.GetCommentText(2));
                     result.AppendLine($"  {methodDisplayText};");
 
                     totalShown++;
@@ -533,6 +538,7 @@ public static class RoslynMcp
                 foreach (var prop in properties.OrderBy(p => p.Name))
                 {
                     var propertyDisplayText = prop.ToFullDisplayText();
+                    result.AppendLine(prop.GetCommentText(2));
                     result.AppendLine($"  {propertyDisplayText}");
 
                     totalShown++;
@@ -549,6 +555,7 @@ public static class RoslynMcp
                 foreach (var field in fields.OrderBy(f => f.Name))
                 {
                     var fieldDisplayText = field.ToFullDisplayText();
+                    result.AppendLine(field.GetCommentText(2));
                     result.AppendLine($"  {fieldDisplayText};");
                     totalShown++;
                 }
@@ -564,6 +571,7 @@ public static class RoslynMcp
                 foreach (var evt in events.OrderBy(e => e.Name))
                 {
                     var eventDisplayText = evt.ToFullDisplayText();
+                    result.AppendLine(evt.GetCommentText(2));
                     result.AppendLine($"  {eventDisplayText};");
 
                     totalShown++;
@@ -590,7 +598,7 @@ public static class RoslynMcp
     }
 
 
-    [McpServerTool, Description("在已解析的dotnet程序集中按模式搜索类型(支持通配符 *), 例如: 'Newtonsoft.*'查找所有以Newtonsoft开头的类型, '*Stream*'查找所有包含Stream的类型")]
+    [McpServerTool, Description("在已解析的dotnet程序集中按模式搜索类型(支持通配符 *), 例如: 'Newtonsoft.*'查找所有以Newtonsoft开头的类型, '*Stream*'查找所有包含Stream的类型, 并获取类型的注释")]
     public static string SearchTypes(
         [Description(PackageIdDescription)] string packageId,
         [Description("程序集文件名")] string assemblyName,
@@ -669,6 +677,7 @@ public static class RoslynMcp
             foreach (var type in allTypesQueryable.Take(maxResults).OrderBy(t => t.Name))
             {
                 var typeDisplayText = type.ToFullDisplayText();
+                result.AppendLine(type.GetCommentText(2));
                 result.AppendLine($"  {typeDisplayText};");
             }
 

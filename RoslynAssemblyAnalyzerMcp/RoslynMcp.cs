@@ -405,7 +405,8 @@ public static class RoslynMcp
         [Description("目标框架 (可选)")] string? targetFramework = null,
         [Description("过滤特定成员名称 (可选)，例如：'WriteLine' 只显示名为 WriteLine 的所有重载")] string? memberName = null,
         [Description("成员类型过滤：method property field event constructor *, 默认*")] string memberType = "*",
-        [Description("true=仅显示公共成员，false=显示所有成员。默认 true")] bool publicOnly = true)
+        [Description("true=仅显示公共成员，false=显示所有成员。默认 true")] bool publicOnly = true,
+        [Description("是否获取注释, 默认true")] bool comment = true)
     {
         try
         {
@@ -461,7 +462,8 @@ public static class RoslynMcp
             }
 
             result.AppendLine();
-            result.AppendLine(targetType.GetCommentText(2));
+            if(comment)
+                result.AppendLine(targetType.GetCommentText(2));
 
             result.AppendLine();
             result.AppendLine("成员列表:");
@@ -505,7 +507,8 @@ public static class RoslynMcp
                 foreach (var ctor in constructors.OrderBy(c => c.Parameters.Length))
                 {
                     var constructorMethodDisplayText = ctor.ToConstructorFullDisplayText();
-                    result.AppendLine(ctor.GetCommentText(2));
+                    if (comment)
+                        result.AppendLine(ctor.GetCommentText(2));
                     result.AppendLine($"    {constructorMethodDisplayText};");
 
                     totalShown++;
@@ -521,7 +524,8 @@ public static class RoslynMcp
                 foreach (var method in methods)
                 {
                     var methodDisplayText = method.ToFullDisplay();
-                    result.AppendLine(method.GetCommentText(2));
+                    if (comment)
+                        result.AppendLine(method.GetCommentText(2));
                     result.AppendLine($"  {methodDisplayText};");
 
                     totalShown++;
@@ -538,7 +542,8 @@ public static class RoslynMcp
                 foreach (var prop in properties.OrderBy(p => p.Name))
                 {
                     var propertyDisplayText = prop.ToFullDisplayText();
-                    result.AppendLine(prop.GetCommentText(2));
+                    if (comment)
+                        result.AppendLine(prop.GetCommentText(2));
                     result.AppendLine($"  {propertyDisplayText}");
 
                     totalShown++;
@@ -555,7 +560,8 @@ public static class RoslynMcp
                 foreach (var field in fields.OrderBy(f => f.Name))
                 {
                     var fieldDisplayText = field.ToFullDisplayText();
-                    result.AppendLine(field.GetCommentText(2));
+                    if (comment)
+                        result.AppendLine(field.GetCommentText(2));
                     result.AppendLine($"  {fieldDisplayText};");
                     totalShown++;
                 }
@@ -571,7 +577,8 @@ public static class RoslynMcp
                 foreach (var evt in events.OrderBy(e => e.Name))
                 {
                     var eventDisplayText = evt.ToFullDisplayText();
-                    result.AppendLine(evt.GetCommentText(2));
+                    if (comment)
+                        result.AppendLine(evt.GetCommentText(2));
                     result.AppendLine($"  {eventDisplayText};");
 
                     totalShown++;
@@ -607,7 +614,8 @@ public static class RoslynMcp
         [Description("目标框架（可选）")] string? targetFramework = null,
         [Description("类型过滤器：class interface enum struct *, 默认 *")] string typeFilter = "*",
         [Description("是否仅显示公共类型")] bool publicOnly = true,
-        [Description("最大返回结果数，默认 50")] int maxResults = 50)
+        [Description("最大返回结果数，默认 50")] int maxResults = 50,
+        [Description("是否获取注释, 默认true")] bool comment = true)
     {
         try
         {
@@ -677,7 +685,8 @@ public static class RoslynMcp
             foreach (var type in allTypesQueryable.Take(maxResults).OrderBy(t => t.Name))
             {
                 var typeDisplayText = type.ToFullDisplayText();
-                result.AppendLine(type.GetCommentText(2));
+                if (comment)
+                    result.AppendLine(type.GetCommentText(2));
                 result.AppendLine($"  {typeDisplayText};");
             }
 

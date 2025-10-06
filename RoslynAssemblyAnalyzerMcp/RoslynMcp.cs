@@ -438,10 +438,11 @@ public static class RoslynMcp
         [Description("完整的类型名称，包括命名空间")] string typeName,
         [Description("包的版本号 (可选)")] string? packageVersion = null,
         [Description("目标框架 (可选)")] string? targetFramework = null,
-        [Description("过滤特定成员名称 (可选)，例如：'WriteLine' 只显示名为 WriteLine 的所有重载")] string? memberName = null,
+        [Description("过滤特定成员名称 (可选)，例如：'WriteLine' 只显示名为 WriteLine 的所有重载")] string? memberNameFilter = null,
         [Description("成员类型过滤：method property field event constructor *, 默认*")] string memberType = "*",
-        [Description("true=仅显示公共成员，false=显示所有成员。默认 true")] bool publicOnly = true,
-        [Description("是否获取注释, 默认true")] bool comment = true)
+        [Description("是否仅显示公共成员，默认true, false选项显示所有成员")] bool publicOnly = true,
+        [Description("是否获取注释, 默认true")] bool comment = true,
+        [Description("是否也获取基类的成员, 默认false")] bool includeBaseMembers = false)
     {
         try
         {
@@ -478,11 +479,11 @@ public static class RoslynMcp
             result.AppendLine($"  类型类别: {targetType.TypeKind}");
             result.AppendLine($"  访问级别: {targetType.DeclaredAccessibility}");
 
-            if (targetType.BaseType != null && targetType.BaseType.SpecialType != SpecialType.System_Object)
+            if (targetType.BaseType != null)
             {
                 var baseTypes = new List<string>();
                 var currentBase = targetType.BaseType;
-                while (currentBase != null && currentBase.SpecialType != SpecialType.System_Object)
+                while (currentBase != null)
                 {
                     baseTypes.Add(currentBase.ToDisplayString());
                     currentBase = currentBase.BaseType;
@@ -493,12 +494,14 @@ public static class RoslynMcp
                 }
             }
 
-            if (targetType.Interfaces.Length > 0)
+            if (targetType.GetInterfaces(includeBaseMembers) is { Count: > 0} interfaces)
             {
-                result.AppendLine($"  接口: {string.Join(", ", targetType.Interfaces.Select(i => i.Name))}");
+                result.AppendLine($"  接口: {string.Join(", ", targetType.GetInterfaces(includeBaseMembers).Select(i => i.Name))}");
             }
 
             result.AppendLine();
+
+            // 注释过滤
             if(comment)
                 result.AppendLine(targetType.GetCommentText(2));
 
@@ -507,18 +510,20 @@ public static class RoslynMcp
             result.AppendLine();
 
             // 获取所有成员
-            var members = targetType.GetMembers().ToList();
+            var membersQueryable = targetType.GetMembers(includeBaseMembers).AsEnumerable();
 
-            // 应用过滤器
+            // public过滤
             if (publicOnly)
             {
-                members = members.Where(m => m.DeclaredAccessibility == Accessibility.Public).ToList();
+                membersQueryable = membersQueryable.Where(m => m.DeclaredAccessibility == Accessibility.Public);
             }
 
-            if (!string.IsNullOrWhiteSpace(memberName))
+            if (!string.IsNullOrWhiteSpace(memberNameFilter))
             {
-                members = members.Where(m => m.Name.Equals(memberName, StringComparison.OrdinalIgnoreCase)).ToList();
+                membersQueryable = membersQueryable.Where(m => m.Name.Contains(memberNameFilter, StringComparison.OrdinalIgnoreCase));
             }
+
+            var members = membersQueryable.ToList();
 
             // 按成员类型分组
             var methods = members.OfType<IMethodSymbol>().Where(m => m.MethodKind == MethodKind.Ordinary).ToList();
@@ -646,7 +651,7 @@ public static class RoslynMcp
     public static async Task<string> SearchTypes(
         [Description(PackageIdDescription)] string packageId,
         [Description("程序集文件名")] string assemblyName,
-        [Description("类型名称搜索模式，支持通配符 *。例如：'Newtonsoft.*'、'*Stream*'、'*Helper'。不指定或 '*' 表示所有类型")] string searchPattern = "*",
+        [Description("名称过滤器, 例如'Newtonsoft.Json'匹配类型全名包含'Newtonsoft.Json'的类型, 'Stream'匹配所有包含Stream的类型, 如果不填或填*则搜索所有类型")] string typeFullNameFilterText = "*",
         [Description("包的版本号（可选）")] string? packageVersion = null,
         [Description("目标框架（可选）")] string? targetFramework = null,
         [Description("类型过滤器：class interface enum struct *, 默认 *")] string typeFilter = "*",
@@ -668,18 +673,18 @@ public static class RoslynMcp
             }
 
             result.AppendLine($"程序集: {assemblyInfo!.AssemblyName}");
-            result.AppendLine($"搜索模式: {searchPattern}");
+            result.AppendLine($"搜索模式: {typeFullNameFilterText}");
 
             // 获取所有类型
             var allTypesQueryable = assemblyInfo.AllTypes.AsEnumerable();
 
-            // 应用可见性过滤
+            // public过滤
             if (publicOnly)
             {
                 allTypesQueryable = allTypesQueryable.Where(t => t.DeclaredAccessibility == Accessibility.Public);
             }
 
-            // 应用类型过滤
+            // 类型过滤
             if (typeFilter != "*")
             {
                 allTypesQueryable = typeFilter.ToLower() switch
@@ -692,21 +697,10 @@ public static class RoslynMcp
                 };
             }
 
-            // 应用模糊搜索
-            if (!string.IsNullOrWhiteSpace(searchPattern) && searchPattern != "*")
+            // 模糊搜索
+            if (!string.IsNullOrWhiteSpace(typeFullNameFilterText) && typeFullNameFilterText != "*")
             {
-                var regex = new Regex(
-                    "^" + Regex.Escape(searchPattern)
-                        .Replace("\\*", ".*")
-                        .Replace("\\?", ".") + "$",
-                    RegexOptions.IgnoreCase);
-
-                allTypesQueryable = allTypesQueryable.Where(t =>
-                {
-                    var fullName = t.ToDisplayString();
-                    var simpleName = t.Name;
-                    return regex.IsMatch(fullName) || regex.IsMatch(simpleName);
-                });
+                allTypesQueryable = allTypesQueryable.Where(v => v.ToDisplayString().Contains(typeFullNameFilterText, StringComparison.OrdinalIgnoreCase));
             }
 
             var allTypes = allTypesQueryable.ToList();

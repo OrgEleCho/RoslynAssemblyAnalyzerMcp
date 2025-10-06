@@ -219,4 +219,57 @@ internal static class Extensions
             return $"'{c}'";
         return value.ToString() ?? "null";
     }
+
+
+    extension(INamedTypeSymbol symbol)
+    {
+        public IReadOnlyCollection<INamedTypeSymbol> GetInterfaces(bool includeBaseMembers = false)
+        {
+            if (!includeBaseMembers)
+            {
+                return symbol.Interfaces;
+            }
+            else
+            {
+                HashSet<INamedTypeSymbol> interfaces = new(SymbolEqualityComparer.IncludeNullability);
+
+                var type = symbol;
+                while (type != null)
+                {
+                    foreach (var item in type.Interfaces)
+                    {
+                        interfaces.Add(item);
+                    }
+                    type = type.BaseType;
+                }
+
+                return interfaces;
+            }
+        }
+
+
+        public IReadOnlyCollection<ISymbol> GetMembers(bool includeBaseMembers = false)
+        {
+            if (!includeBaseMembers)
+            {
+                return symbol.GetMembers();
+            }
+            else
+            {
+                HashSet<ISymbol> members = new(SymbolEqualityComparer.IncludeNullability);
+
+                var type = symbol;
+                while (type != null)
+                {
+                    foreach (var item in type.GetMembers())
+                    {
+                        members.Add(item);
+                    }
+                    type = type.BaseType;
+                }
+
+                return members;
+            }
+        }
+    }
 }

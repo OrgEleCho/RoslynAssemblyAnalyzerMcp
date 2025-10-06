@@ -108,6 +108,9 @@ public class RoslynService
             return null;
         }
 
+        var attributes = assemblySymbol.GetAttributes();
+        bool isRefAssembly = attributes.Any(v => v?.AttributeClass?.ToString() == "System.Runtime.CompilerServices.ReferenceAssemblyAttribute");
+
         AssemblyAnalysisInfo result = new()
         {
             PackageId = packageId,
@@ -117,6 +120,7 @@ public class RoslynService
             AssemblyVersion = assemblySymbol.Identity.Version.ToString(),
             AssemblyPath = assemblyPath,
             AssemblySymbol = assemblySymbol,
+            IsRefAssembly = isRefAssembly,
         };
 
         // 统计类型
@@ -240,6 +244,8 @@ public class AssemblyAnalysisInfo
     public required string AssemblyName { get; set; }
     public required string AssemblyVersion { get; set; }
     public required string AssemblyPath { get; set; }
+
+    public bool IsRefAssembly { get; set; }
 
     public required IAssemblySymbol AssemblySymbol { get; set; }
 

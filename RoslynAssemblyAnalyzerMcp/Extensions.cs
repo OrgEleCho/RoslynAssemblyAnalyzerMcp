@@ -201,6 +201,8 @@ internal static class Extensions
         {
             if (s[^1] is '\r' or '\n')
                 s.Remove(s.Length - 1, 1);
+            else
+                break;
         }
         return s.ToString();
     }

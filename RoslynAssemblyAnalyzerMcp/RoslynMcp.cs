@@ -6,6 +6,7 @@ using Microsoft.CodeAnalysis;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Diagnostics.CodeAnalysis;
+using NuGet.Packaging;
 
 namespace RoslynAssemblyAnalyzerMcp;
 
@@ -167,7 +168,7 @@ public static class RoslynMcp
     [McpServerTool, Description("获取NuGet包中所有程序集文件信息")]
     public static async Task<string> GetPackageAssemblies(
         [Description(PackageIdDescription)] string packageId,
-        [Description("包的版本号, 如果不指定则使用最新版本")] string? version = null)
+        [Description("包的版本号, 如果不指定则使用最新版本")] string? packageVersion = null)
     {
         try
         {
@@ -182,7 +183,7 @@ public static class RoslynMcp
             result.AppendLine($"Package Id: {packageId}");
 
             // 确定要使用的版本
-            IPackageSearchMetadata? targetMetadata = versions.GetVersion(version);
+            IPackageSearchMetadata? targetMetadata = versions.GetVersion(packageVersion);
             if (targetMetadata is null)
             {
                 result.AppendLine("无法获取指定版本的包");
@@ -202,13 +203,26 @@ public static class RoslynMcp
             // 获取所有 lib 文件
             var libItems = packageReader.GetLibItems().ToList();
 
+            bool isFindRefAssembly = false;
+
             if (libItems.Count == 0)
             {
-                result.AppendLine("该包不包含任何程序集文件。");
-                return result.ToString();
+                isFindRefAssembly = true;
+
+                var items = await packageReader.GetItemsAsync(PackagingConstants.Folders.Ref, default);
+                libItems = items.ToList();
+
+                if (libItems.Count == 0)
+                {
+                    result.AppendLine("该包不包含任何程序集文件。");
+                    return result.ToString();
+                }
             }
 
-
+            if (isFindRefAssembly)
+            {
+                result.AppendLine($"没有找到Lib程序集, 只找到了Ref程序集");
+            }
             result.AppendLine($"找到 {libItems.Count} 个目标框架:");
             foreach (var libItem in libItems)
             {
@@ -228,7 +242,7 @@ public static class RoslynMcp
                     foreach (var assembly in assemblies)
                     {
                         var fileName = Path.GetFileName(assembly);
-                        result.AppendLine($"  {fileName}");
+                        result.AppendLine($"- {fileName}");
 
                     }
                 }
@@ -244,100 +258,117 @@ public static class RoslynMcp
         }
     }
 
+    private static async Task<(AssemblyAnalysisInfo? AssemblyAnalysisInfo, string? ErrorMessage)> TryGetAssemblyAnalysisInfo(string packageId, string assemblyName, string? packageVersion, string? targetFramework)
+    {
+        assemblyName = EnsureAssemblyName(assemblyName);
+
+        var versions = await _service.GetPackageMetadataAsync(packageId, includePrerelease: true);
+        if (versions.Count == 0)
+        {
+            return (null, $"未找到包: {packageId}");
+        }
+
+        // 确定要使用的版本
+        IPackageSearchMetadata? targetMetadata = versions.GetVersion(packageVersion);
+        if (targetMetadata is null)
+        {
+            return (null, "无法获取指定版本的包");
+        }
+
+        AssemblyAnalysisInfo? assemblyInfo;
+        if (!TryGetAnalyzeAssemblyCache(packageId, packageVersion ?? "latest", assemblyName, targetFramework, out assemblyInfo, out var error))
+        {
+            // 下载包
+            var downloadResult = await _service.DownloadPackageAsync(targetMetadata.Identity);
+            if (downloadResult.Status != DownloadResourceResultStatus.Available)
+            {
+                return (null, $"错误：无法下载包，状态: {downloadResult.Status}");
+            }
+
+            // 查找程序集文件
+            string? assemblyPath = null;
+            string? selectedFramework = null;
+
+            using (var packageReader = downloadResult.PackageReader)
+            {
+                var libItems = (await packageReader.GetLibItemsAsync(default)).ToList();
+
+                if (libItems.Count == 0)
+                {
+                    // 如果找不到lib, 则找refs
+                    var items = await packageReader.GetItemsAsync(PackagingConstants.Folders.Ref, default);
+                    libItems = items.ToList();
+                    if (libItems.Count == 0)
+                    {
+                        return (null, "错误：该包不包含任何程序集文件");
+                    }
+                }
+
+                // 查找指定的程序集
+                foreach (var libItem in libItems)
+                {
+                    var framework = libItem.TargetFramework.GetShortFolderName();
+
+                    // 如果指定了目标框架，只查找匹配的
+                    if (!string.IsNullOrWhiteSpace(targetFramework) && framework != targetFramework)
+                    {
+                        continue;
+                    }
+
+                    var assembly = libItem.Items.FirstOrDefault(item =>
+                        Path.GetFileName(item).Equals(assemblyName, StringComparison.OrdinalIgnoreCase));
+
+                    if (assembly != null)
+                    {
+                        // {GlobalPackagePath}\{packageId}\{version}\{assembly}
+                        assemblyPath = Path.Combine(
+                            _service.GlobalPackagePath,
+                            targetMetadata.Identity.Id.ToLowerInvariant(),
+                            targetMetadata.Identity.Version.ToString(),
+                            assembly);
+
+                        selectedFramework = framework;
+                        break;
+                    }
+                }
+            }
+
+            if (assemblyPath == null)
+            {
+                return (null, $"错误：在包中未找到程序集 '{assemblyName}'");
+            }
+
+            assemblyInfo = _service.AnalyzeAssembly(packageId, targetMetadata.Identity.Version.ToString(), assemblyName, targetFramework, assemblyPath, packageVersion is null);
+        }
+
+        if(assemblyInfo is null)
+        {
+            return (null, "程序集信息获取失败");
+        }
+
+        return (assemblyInfo, null);
+    }
+
 
     [McpServerTool, Description("分析并获取dotnet程序集的基本信息 (获取程序集的所有的类型个数, 命名空间, 引用信息等)")]
     public static async Task<string> AnalyzeAssembly(
         [Description(PackageIdDescription)] string packageId,
-        [Description("要分析的程序集文件名, 通常是包名或包名.dll(例如：'Newtonsoft.Json' 或 'Newtonsoft.Json.dll')")] string assemblyName,
-        [Description("包的版本号，如果不指定则使用最新版本")] string? version = null,
+        [Description("要分析的程序集文件名, 通常是包名.dll(例如：'Newtonsoft.Json' 或 'Newtonsoft.Json.dll')")] string assemblyName,
+        [Description("包的版本号，如果不指定则使用最新版本")] string? packageVersion = null,
         [Description("目标框架(例如 net6.0 net8.0) 如果不指定则使用默认可用的框架")] string? targetFramework = null)
     {
         try
         {
             var result = new StringBuilder();
 
-            assemblyName = EnsureAssemblyName(assemblyName);
+            var (assemblyInfo, errorMessage) = await TryGetAssemblyAnalysisInfo(packageId, assemblyName, packageVersion, targetFramework);
 
-            var versions = await _service.GetPackageMetadataAsync(packageId, includePrerelease: true);
-            if (versions.Count == 0)
+            if(errorMessage != null)
             {
-                return $"未找到包: {packageId}";
+                return errorMessage;
             }
 
-            // 确定要使用的版本
-            IPackageSearchMetadata? targetMetadata = versions.GetVersion(version);
-            if (targetMetadata is null)
-            {
-                result.AppendLine("无法获取指定版本的包");
-                return result.ToString();
-            }
-
-            AssemblyAnalysisInfo? assemblyInfo;
-            if (!TryGetAnalyzeAssemblyCache(packageId, version ?? "latest", assemblyName, targetFramework, out assemblyInfo, out var error))
-            {
-                // 下载包
-                var downloadResult = await _service.DownloadPackageAsync(targetMetadata.Identity);
-                if (downloadResult.Status != DownloadResourceResultStatus.Available)
-                {
-                    return $"错误：无法下载包，状态: {downloadResult.Status}";
-                }
-
-                // 查找程序集文件
-                string? assemblyPath = null;
-                string? selectedFramework = null;
-
-                using (var packageReader = downloadResult.PackageReader)
-                {
-                    var libItems = packageReader.GetLibItems().ToList();
-
-                    if (libItems.Count == 0)
-                    {
-                        return "错误：该包不包含任何程序集文件";
-                    }
-
-                    // 查找指定的程序集
-                    foreach (var libItem in libItems)
-                    {
-                        var framework = libItem.TargetFramework.GetShortFolderName();
-
-                        // 如果指定了目标框架，只查找匹配的
-                        if (!string.IsNullOrWhiteSpace(targetFramework) && framework != targetFramework)
-                        {
-                            continue;
-                        }
-
-                        var assembly = libItem.Items.FirstOrDefault(item =>
-                            Path.GetFileName(item).Equals(assemblyName, StringComparison.OrdinalIgnoreCase));
-
-                        if (assembly != null)
-                        {
-                            // {GlobalPackagePath}\{packageId}\{version}\{assembly}
-                            assemblyPath = Path.Combine(
-                                _service.GlobalPackagePath,
-                                targetMetadata.Identity.Id.ToLowerInvariant(),
-                                targetMetadata.Identity.Version.ToString(),
-                                assembly);
-
-                            selectedFramework = framework;
-                            break;
-                        }
-                    }
-                }
-
-                if (assemblyPath == null)
-                {
-                    return $"错误：在包中未找到程序集 '{assemblyName}'";
-                }
-
-                assemblyInfo = _service.AnalyzeAssembly(packageId, targetMetadata.Identity.Version.ToString(), assemblyName, targetFramework, assemblyPath, version is null);
-            }
-
-            if (assemblyInfo is null)
-            {
-                return "错误：无法分析程序集";
-            }
-
-            result.AppendLine($"目标框架: {assemblyInfo.TargetFramework}");
+            result.AppendLine($"目标框架: {assemblyInfo!.TargetFramework}");
             result.AppendLine("程序集分析:");
             result.AppendLine();
 
@@ -346,6 +377,10 @@ public static class RoslynMcp
             var assemblyInfoBuilder = new StringBuilder();
             assemblyInfoBuilder.AppendLine($"程序集名称: {assemblyInfo.AssemblyName}");
             assemblyInfoBuilder.AppendLine($"版本: {assemblyInfo.AssemblyVersion}");
+            if (assemblyInfo.IsRefAssembly)
+            {
+                assemblyInfoBuilder.AppendLine("这是一个RefsAssembly");
+            }
 
             assemblyInfoBuilder.AppendLine();
             assemblyInfoBuilder.AppendLine($"类型统计:");
@@ -397,11 +432,11 @@ public static class RoslynMcp
 
 
     [McpServerTool, Description("获取dotnet程序集中指定类型的所有成员详细信息(方法 属性 字段 事件 以及对应的注释等)")]
-    public static string GetTypeMembers(
+    public static async Task<string> GetTypeMembers(
         [Description(PackageIdDescription)] string packageId,
         [Description("程序集文件名")] string assemblyName,
         [Description("完整的类型名称，包括命名空间")] string typeName,
-        [Description("包的版本号 (可选)")] string? version = null,
+        [Description("包的版本号 (可选)")] string? packageVersion = null,
         [Description("目标框架 (可选)")] string? targetFramework = null,
         [Description("过滤特定成员名称 (可选)，例如：'WriteLine' 只显示名为 WriteLine 的所有重载")] string? memberName = null,
         [Description("成员类型过滤：method property field event constructor *, 默认*")] string memberType = "*",
@@ -414,13 +449,15 @@ public static class RoslynMcp
 
             assemblyName = EnsureAssemblyName(assemblyName);
 
-            if (!TryGetAnalyzeAssemblyCache(packageId, version ?? "latest", assemblyName, targetFramework, out var assemblyInfo, out var error))
+            var (assemblyInfo, errorMessage) = await TryGetAssemblyAnalysisInfo(packageId, assemblyName, packageVersion, targetFramework);
+
+            if (errorMessage != null)
             {
-                return error;
+                return errorMessage;
             }
 
 
-            result.AppendLine($"程序集: {assemblyInfo.AssemblyName}");
+            result.AppendLine($"程序集: {assemblyInfo!.AssemblyName}");
             result.AppendLine($"类型: {typeName}");
             result.AppendLine();
 
@@ -606,11 +643,11 @@ public static class RoslynMcp
 
 
     [McpServerTool, Description("在已解析的dotnet程序集中按模式搜索类型(支持通配符 *), 例如: 'Newtonsoft.*'查找所有以Newtonsoft开头的类型, '*Stream*'查找所有包含Stream的类型, 并获取类型的注释")]
-    public static string SearchTypes(
+    public static async Task<string> SearchTypes(
         [Description(PackageIdDescription)] string packageId,
         [Description("程序集文件名")] string assemblyName,
         [Description("类型名称搜索模式，支持通配符 *。例如：'Newtonsoft.*'、'*Stream*'、'*Helper'。不指定或 '*' 表示所有类型")] string searchPattern = "*",
-        [Description("包的版本号（可选）")] string? version = null,
+        [Description("包的版本号（可选）")] string? packageVersion = null,
         [Description("目标框架（可选）")] string? targetFramework = null,
         [Description("类型过滤器：class interface enum struct *, 默认 *")] string typeFilter = "*",
         [Description("是否仅显示公共类型")] bool publicOnly = true,
@@ -623,12 +660,14 @@ public static class RoslynMcp
 
             assemblyName = EnsureAssemblyName(assemblyName);
 
-            if (!TryGetAnalyzeAssemblyCache(packageId, version ?? "latest", assemblyName, targetFramework, out var assemblyInfo, out var error))
+            var (assemblyInfo, errorMessage) = await TryGetAssemblyAnalysisInfo(packageId, assemblyName, packageVersion, targetFramework);
+
+            if (errorMessage != null)
             {
-                return error;
+                return errorMessage;
             }
 
-            result.AppendLine($"程序集: {assemblyInfo.AssemblyName}");
+            result.AppendLine($"程序集: {assemblyInfo!.AssemblyName}");
             result.AppendLine($"搜索模式: {searchPattern}");
 
             // 获取所有类型

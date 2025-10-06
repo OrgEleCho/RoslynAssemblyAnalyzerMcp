@@ -121,14 +121,14 @@ internal static class Extensions
 
         if (type.BaseType != null)
         {
-            baseTypeAndInterfaces.Add(type.BaseType.ToDisplayString());
+            baseTypeAndInterfaces.Add(type.BaseType.ToFullName());
         }
         if (type.Interfaces.Length > 0)
         {
             baseTypeAndInterfaces.AddRange(type.Interfaces.Select(v => v.Name));
         }
 
-        return $"{accessibility}{modifiersStr} {type.TypeKind.ToString().ToLower()} {type.ToDisplayString()}{(baseTypeAndInterfaces.Count > 0 ? " : " : "")}{string.Join(", ", baseTypeAndInterfaces)}";
+        return $"{accessibility}{modifiersStr} {type.TypeKind.ToString().ToLower()} {type.ToFullName()}{(baseTypeAndInterfaces.Count > 0 ? " : " : "")}{string.Join(", ", baseTypeAndInterfaces)}";
     }
 
     public static string ToConstructorFullDisplayText(this IMethodSymbol constructorMethod)
@@ -223,6 +223,9 @@ internal static class Extensions
 
     extension(INamedTypeSymbol symbol)
     {
+        // 获取全名, 例如System.Int32, System.IO.Stream
+        public string ToFullName() => $"{symbol.ContainingNamespace.ToDisplayString()}.{symbol.Name}";
+
         public IReadOnlyCollection<INamedTypeSymbol> GetInterfaces(bool includeBaseMembers = false)
         {
             if (!includeBaseMembers)

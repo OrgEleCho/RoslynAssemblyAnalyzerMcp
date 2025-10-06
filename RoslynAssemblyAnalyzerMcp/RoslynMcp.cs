@@ -438,7 +438,7 @@ public static class RoslynMcp
         [Description("完整的类型名称，包括命名空间")] string typeName,
         [Description("包的版本号 (可选)")] string? packageVersion = null,
         [Description("目标框架 (可选)")] string? targetFramework = null,
-        [Description("过滤特定成员名称 (可选)，例如：'WriteLine' 只显示名为 WriteLine 的所有重载")] string? memberNameFilter = null,
+        [Description("过滤特定成员名称 (可选)，例如：'WriteLine' 只显示名为 WriteLine 的所有重载")] string? memberNameFilterText = null,
         [Description("成员类型过滤：method property field event constructor *, 默认*")] string memberType = "*",
         [Description("是否仅显示公共成员，默认true, false选项显示所有成员")] bool publicOnly = true,
         [Description("是否获取注释, 默认true")] bool comment = true,
@@ -465,6 +465,7 @@ public static class RoslynMcp
             // 查找指定的类型
             var allTypes = assemblyInfo.AllTypes;
             var targetType = allTypes.FirstOrDefault(t =>
+                t.ToFullName() == typeName ||
                 t.ToDisplayString() == typeName ||
                 t.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) == typeName ||
                 t.Name == typeName);
@@ -518,9 +519,10 @@ public static class RoslynMcp
                 membersQueryable = membersQueryable.Where(m => m.DeclaredAccessibility == Accessibility.Public);
             }
 
-            if (!string.IsNullOrWhiteSpace(memberNameFilter))
+            if (!string.IsNullOrWhiteSpace(memberNameFilterText))
             {
-                membersQueryable = membersQueryable.Where(m => m.Name.Contains(memberNameFilter, StringComparison.OrdinalIgnoreCase));
+                Regex regex = new Regex(Regex.Escape(memberNameFilterText).Replace(@"\*", ".*"), RegexOptions.IgnoreCase);
+                membersQueryable = membersQueryable.Where(m => regex.IsMatch(m.Name));
             }
 
             var members = membersQueryable.ToList();
@@ -651,7 +653,7 @@ public static class RoslynMcp
     public static async Task<string> SearchTypes(
         [Description(PackageIdDescription)] string packageId,
         [Description("程序集文件名")] string assemblyName,
-        [Description("名称过滤器, 例如'Newtonsoft.Json'匹配类型全名包含'Newtonsoft.Json'的类型, 'Stream'匹配所有包含Stream的类型, 如果不填或填*则搜索所有类型")] string typeFullNameFilterText = "*",
+        [Description("名称过滤器, 例如'Newtonsoft.Json'匹配类型全名包含'Newtonsoft.Json'的类型, 'Stream'匹配所有包含Stream的类型, 'Stream'相当于'*Stream*', 如果不填或填*则搜索所有类型")] string typeFullNameFilterText = "*",
         [Description("包的版本号（可选）")] string? packageVersion = null,
         [Description("目标框架（可选）")] string? targetFramework = null,
         [Description("类型过滤器：class interface enum struct *, 默认 *")] string typeFilter = "*",
@@ -700,7 +702,8 @@ public static class RoslynMcp
             // 模糊搜索
             if (!string.IsNullOrWhiteSpace(typeFullNameFilterText) && typeFullNameFilterText != "*")
             {
-                allTypesQueryable = allTypesQueryable.Where(v => v.ToDisplayString().Contains(typeFullNameFilterText, StringComparison.OrdinalIgnoreCase));
+                Regex regex = new Regex(Regex.Escape(typeFullNameFilterText).Replace(@"\*", ".*"), RegexOptions.IgnoreCase);
+                allTypesQueryable = allTypesQueryable.Where(v => regex.IsMatch(v.ToFullName()));
             }
 
             var allTypes = allTypesQueryable.ToList();

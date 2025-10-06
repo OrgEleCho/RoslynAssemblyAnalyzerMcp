@@ -26,14 +26,7 @@ public class RoslynService
 
     public async Task Initialize()
     {
-        if (OperatingSystem.IsWindows())
-        {
-            GlobalPackagePath = Environment.ExpandEnvironmentVariables(@"%UserProfile%\.nuget\packages");
-        }
-        else
-        {
-            GlobalPackagePath = "~/.nuget/packages";
-        }
+        GlobalPackagePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
 
         var settings = Settings.LoadDefaultSettings(root: null);
         var packageSourceProvider = new PackageSourceProvider(settings);

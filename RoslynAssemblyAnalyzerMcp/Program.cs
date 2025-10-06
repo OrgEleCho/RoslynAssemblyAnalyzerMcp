@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using RoslynAssemblyAnalyzerMcp;
 using System.Text.Encodings.Web;
+
+await RoslynMcp.Initialize();
 
 var builder = WebApplication.CreateBuilder(args);
 

@@ -17,10 +17,7 @@ public static class RoslynMcp
 
     private const string PackageIdDescription = "NuGet PackageId (例如: 'Newtonsoft.Json', 'Microsoft.EntityFrameworkCore')";
 
-    static RoslynMcp()
-    {
-        _service.Initialize().ConfigureAwait(false).GetAwaiter().GetResult();
-    }
+    public static Task Initialize() => _service.Initialize();
 
     private static bool TryGetAnalyzeAssemblyCache(string packageId, string packageVersion, string assemblyName, string? targetFramework, [NotNullWhen(true)] out AssemblyAnalysisInfo? assemblyAnalysisInfo, [NotNullWhen(false)] out string? errorMessage)
     {

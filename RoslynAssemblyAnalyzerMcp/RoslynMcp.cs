@@ -457,7 +457,6 @@ public static class RoslynMcp
                 return errorMessage;
             }
 
-
             result.AppendLine($"程序集: {assemblyInfo!.AssemblyName}");
             result.AppendLine($"类型: {typeName}");
             result.AppendLine();
@@ -480,24 +479,14 @@ public static class RoslynMcp
             result.AppendLine($"  类型类别: {targetType.TypeKind}");
             result.AppendLine($"  访问级别: {targetType.DeclaredAccessibility}");
 
-            if (targetType.BaseType != null)
+            if (targetType.GetBaseTypes() is { Count: > 0 } baseTypes)
             {
-                var baseTypes = new List<string>();
-                var currentBase = targetType.BaseType;
-                while (currentBase != null)
-                {
-                    baseTypes.Add(currentBase.ToDisplayString());
-                    currentBase = currentBase.BaseType;
-                }
-                if (baseTypes.Count > 0)
-                {
-                    result.AppendLine($"  基类: {string.Join(" -> ", baseTypes)}");
-                }
+                result.AppendLine($"  基类: {string.Join(" -> ", baseTypes.Select(v => v.ToFullName()))}");
             }
-
+            
             if (targetType.GetInterfaces(includeBaseMembers) is { Count: > 0} interfaces)
             {
-                result.AppendLine($"  接口: {string.Join(", ", targetType.GetInterfaces(includeBaseMembers).Select(i => i.Name))}");
+                result.AppendLine($"  接口: {string.Join(", ", targetType.GetInterfaces(includeBaseMembers).Select(i => i.ToFullName()))}");
             }
 
             result.AppendLine();

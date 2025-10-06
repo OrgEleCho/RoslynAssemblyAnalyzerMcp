@@ -223,7 +223,10 @@ internal static class Extensions
 
     extension(INamedTypeSymbol symbol)
     {
-        // 获取全名, 例如System.Int32, System.IO.Stream
+        /// <summary>
+        /// 获取全名, 例如System.Int32, System.IO.Stream
+        /// </summary>
+        /// <returns></returns>
         public string ToFullName() => $"{symbol.ContainingNamespace.ToDisplayString()}.{symbol.Name}";
 
         public IReadOnlyCollection<INamedTypeSymbol> GetInterfaces(bool includeBaseMembers = false)
@@ -273,6 +276,25 @@ internal static class Extensions
 
                 return members;
             }
+        }
+
+        /// <summary>
+        /// 获取所有的基类, 包括System.Object, 不包括自己
+        /// </summary>
+        /// <returns></returns>
+        public IReadOnlyList<INamedTypeSymbol> GetBaseTypes()
+        {
+            if (symbol.BaseType is null)
+                return [];
+
+            var baseTypes = new List<INamedTypeSymbol>();
+            var type = symbol.BaseType;
+            while (type != null)
+            {
+                baseTypes.Add(type);
+                type = type.BaseType;
+            }
+            return baseTypes;
         }
     }
 }

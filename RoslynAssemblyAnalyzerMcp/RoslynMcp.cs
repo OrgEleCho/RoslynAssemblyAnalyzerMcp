@@ -16,6 +16,7 @@ public static class RoslynMcp
     private static readonly RoslynService _service = new();
 
     private const string PackageIdDescription = "NuGet PackageId (例如: 'Newtonsoft.Json', 'Microsoft.EntityFrameworkCore')";
+    private const string AssemblyNameDescription = "程序集名(例如: 'System.Runtime.dll' 'Newtonsoft.Json.dll', 如果不填则使用和包名相同的程序集名)";
 
     public static Task Initialize() => _service.Initialize();
 
@@ -255,8 +256,10 @@ public static class RoslynMcp
         }
     }
 
-    private static async Task<(AssemblyAnalysisInfo? AssemblyAnalysisInfo, string? ErrorMessage)> TryGetAssemblyAnalysisInfo(string packageId, string assemblyName, string? packageVersion, string? targetFramework)
+    private static async Task<(AssemblyAnalysisInfo? AssemblyAnalysisInfo, string? ErrorMessage)> TryGetAssemblyAnalysisInfo(string packageId, string? assemblyName, string? packageVersion, string? targetFramework)
     {
+        if (string.IsNullOrWhiteSpace(assemblyName))
+            assemblyName = packageId;
         assemblyName = EnsureAssemblyName(assemblyName);
 
         var versions = await _service.GetPackageMetadataAsync(packageId, includePrerelease: true);
@@ -350,7 +353,7 @@ public static class RoslynMcp
     [McpServerTool, Description("分析并获取dotnet程序集的基本信息 (获取程序集的所有的类型个数, 命名空间, 引用信息等)")]
     public static async Task<string> AnalyzeAssembly(
         [Description(PackageIdDescription)] string packageId,
-        [Description("要分析的程序集文件名, 通常是包名.dll(例如：'Newtonsoft.Json' 或 'Newtonsoft.Json.dll')")] string assemblyName,
+        [Description(AssemblyNameDescription)] string? assemblyName,
         [Description("包的版本号，如果不指定则使用最新版本")] string? packageVersion = null,
         [Description("目标框架(例如 net6.0 net8.0) 如果不指定则使用默认可用的框架")] string? targetFramework = null)
     {
@@ -431,7 +434,7 @@ public static class RoslynMcp
     [McpServerTool, Description("获取dotnet程序集中指定类型的所有成员详细信息(方法 属性 字段 事件 以及对应的注释等)")]
     public static async Task<string> GetTypeMembers(
         [Description(PackageIdDescription)] string packageId,
-        [Description("程序集文件名")] string assemblyName,
+        [Description(AssemblyNameDescription)] string? assemblyName,
         [Description("完整的类型名称，包括命名空间")] string typeName,
         [Description("包的版本号 (可选)")] string? packageVersion = null,
         [Description("目标框架 (可选)")] string? targetFramework = null,
@@ -444,8 +447,6 @@ public static class RoslynMcp
         try
         {
             var result = new StringBuilder();
-
-            assemblyName = EnsureAssemblyName(assemblyName);
 
             var (assemblyInfo, errorMessage) = await TryGetAssemblyAnalysisInfo(packageId, assemblyName, packageVersion, targetFramework);
 
@@ -638,7 +639,7 @@ public static class RoslynMcp
     [McpServerTool, Description("在已解析的dotnet程序集中按模式搜索类型(支持通配符 *), 例如: 'Newtonsoft.*'查找所有以Newtonsoft开头的类型, '*Stream*'查找所有包含Stream的类型, 并获取类型的注释")]
     public static async Task<string> SearchTypes(
         [Description(PackageIdDescription)] string packageId,
-        [Description("程序集文件名")] string assemblyName,
+        [Description(AssemblyNameDescription)] string? assemblyName = null,
         [Description("名称过滤器, 例如'Newtonsoft.Json'匹配类型全名包含'Newtonsoft.Json'的类型, 'Stream'匹配所有包含Stream的类型, 'Stream'相当于'*Stream*', 如果不填或填*则搜索所有类型")] string typeFullNameFilterText = "*",
         [Description("包的版本号（可选）")] string? packageVersion = null,
         [Description("目标框架（可选）")] string? targetFramework = null,
@@ -651,8 +652,6 @@ public static class RoslynMcp
         {
             var result = new StringBuilder();
 
-            assemblyName = EnsureAssemblyName(assemblyName);
-
             var (assemblyInfo, errorMessage) = await TryGetAssemblyAnalysisInfo(packageId, assemblyName, packageVersion, targetFramework);
 
             if (errorMessage != null)
@@ -663,6 +662,11 @@ public static class RoslynMcp
             result.AppendLine($"程序集: {assemblyInfo!.AssemblyName}");
             result.AppendLine($"搜索模式: {typeFullNameFilterText}");
 
+            if (assemblyInfo.AllTypes.Count == 1 && assemblyInfo.AllTypes[0].Name == "<Module>")
+            {
+                result.Append("搜索失败, 这个程序集里没有任何类型");
+                return result.ToString();
+            }
             // 获取所有类型
             var allTypesQueryable = assemblyInfo.AllTypes.AsEnumerable();
 

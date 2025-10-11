@@ -1,12 +1,16 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using RoslynAssemblyAnalyzerMcp;
+using Serilog;
 using System.Text.Encodings.Web;
 
-await RoslynMcp.Initialize();
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSerilog();
 builder.Services.AddMcpServer()
     .WithHttpTransport()
     .WithToolsFromAssembly();

@@ -802,11 +802,11 @@ public sealed partial class RoslynMcp
                 return (null, $"错误：在包中未找到程序集 '{assemblyName}'");
             }
 
-            assemblyInfo = _service.AnalyzeAssembly(packageId, targetMetadata.Identity.Version.ToString(), assemblyName, targetFramework, assemblyPath, packageVersion is null);
-            if (assemblyInfo is null)
+            if (!Utils.IsDotnetAssembly(assemblyPath))
             {
-                return (null, "错误: 分析失败, 这可能是一个本机库程序");
+                return (null, "分析错误, 这是一个本机库");
             }
+            assemblyInfo = _service.AnalyzeAssembly(packageId, targetMetadata.Identity.Version.ToString(), assemblyName, targetFramework, assemblyPath, packageVersion is null);
 
         }
 

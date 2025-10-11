@@ -3,6 +3,7 @@ using NuGet.Versioning;
 using Microsoft.CodeAnalysis;
 using System.Xml;
 using System.Text;
+using System.Diagnostics.CodeAnalysis;
 
 namespace RoslynAssemblyAnalyzerMcp;
 
@@ -297,4 +298,21 @@ internal static class Extensions
             return baseTypes;
         }
     }
+
+    extension(ReadOnlySpan<char> str)
+    {
+        public bool EqualsFileExtension(ReadOnlySpan<char> otherFileExtension) 
+            => Path.GetExtension(str).SequenceEqual(otherFileExtension, CharComparer.IgnoreCaseComparer);
+    }
+}
+
+file class CharComparer : IEqualityComparer<char>
+{
+    public static CharComparer IgnoreCaseComparer { get; } = new CharComparer();
+
+    private CharComparer() { }
+
+    public bool Equals(char x, char y) => x == y || char.ToUpperInvariant(x) == char.ToUpperInvariant(y);
+
+    public int GetHashCode([DisallowNull] char c) => char.ToUpperInvariant(c);
 }

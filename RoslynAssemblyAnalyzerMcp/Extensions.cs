@@ -228,7 +228,11 @@ internal static class Extensions
         /// 获取全名, 例如System.Int32, System.IO.Stream
         /// </summary>
         /// <returns></returns>
-        public string ToFullName() => $"{symbol.ContainingNamespace.ToDisplayString()}.{symbol.Name}";
+        public string ToFullName() => $"{symbol.ContainingNamespace.ToDisplayStringOrEmpty() switch
+        {
+            "" => "",
+            var ns => $"{ns}.",
+        }}{symbol.Name}";
 
         public IReadOnlyCollection<INamedTypeSymbol> GetInterfaces(bool includeBaseMembers = false)
         {
@@ -301,8 +305,22 @@ internal static class Extensions
 
     extension(ReadOnlySpan<char> str)
     {
+        /// <summary>
+        /// 不区分大小写判断扩展名
+        /// </summary>
+        /// <param name="otherFileExtension"></param>
+        /// <returns></returns>
         public bool EqualsFileExtension(ReadOnlySpan<char> otherFileExtension) 
             => Path.GetExtension(str).SequenceEqual(otherFileExtension, CharComparer.IgnoreCaseComparer);
+    }
+
+    extension(INamespaceSymbol namespaceSymbol)
+    {
+        /// <summary>
+        /// global namespace 输出为 string.Empty
+        /// </summary>
+        /// <returns></returns>
+        public string ToDisplayStringOrEmpty() => namespaceSymbol.IsGlobalNamespace ? string.Empty : namespaceSymbol.ToDisplayString();
     }
 }
 

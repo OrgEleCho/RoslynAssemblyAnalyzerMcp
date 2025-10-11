@@ -147,7 +147,7 @@ public class RoslynService
         // 命名空间
         var namespaces = allTypes
             .Where(t => t.ContainingNamespace != null)
-            .Select(t => t.ContainingNamespace.ToDisplayString())
+            .Select(t => t.ContainingNamespace.ToDisplayStringOrEmpty())
             .Distinct()
             .OrderBy(n => n)
             .ToList();

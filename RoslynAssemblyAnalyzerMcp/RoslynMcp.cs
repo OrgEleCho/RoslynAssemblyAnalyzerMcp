@@ -331,10 +331,10 @@ public sealed partial class RoslynMcp(RoslynService roslynService, ILogger<Rosly
             {
                 assemblyInfoBuilder.AppendLine($"   ... 还有 {assemblyInfo.Namespaces.Count - namespaceLinit} 个命名空间");
             }
-            assemblyInfoBuilder.AppendLine($"引用的程序集 ({assemblyInfo.References.Count} 个):");
+            assemblyInfoBuilder.AppendLine();
 
             var referencesLimit = 50;
-            assemblyInfoBuilder.AppendLine();
+            assemblyInfoBuilder.AppendLine($"引用的程序集 ({assemblyInfo.References.Count} 个):");
             foreach (var refAsm in assemblyInfo.References.Take(referencesLimit))
             {
                 assemblyInfoBuilder.AppendLine($"   - {refAsm}");

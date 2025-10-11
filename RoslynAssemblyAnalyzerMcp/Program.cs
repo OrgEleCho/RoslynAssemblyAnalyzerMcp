@@ -2,15 +2,18 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using RoslynAssemblyAnalyzerMcp;
 using Serilog;
+using Serilog.Events;
 using System.Text.Encodings.Web;
-
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSerilog();
+builder.Services.AddSerilog(configuration =>
+{
+    configuration.WriteTo.Console();
+    configuration.MinimumLevel.Override("Microsoft.AspNetCore.Hosting", LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.AspNetCore.Mvc", LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.AspNetCore.Routing", LogEventLevel.Warning);
+});
 builder.Services.AddSingleton<RoslynService>();
 builder.Services.AddSingleton<RoslynMcp>();
 
@@ -31,6 +34,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 });
 
 var app = builder.Build();
+
+app.UseSerilogRequestLogging();
 
 app.MapMcp();
 

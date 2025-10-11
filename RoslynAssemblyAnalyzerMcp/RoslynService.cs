@@ -5,7 +5,7 @@ using NuGet.Common;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.Caching.Memory;
-using System.Globalization;
+using Microsoft.Extensions.Logging;
 
 namespace RoslynAssemblyAnalyzerMcp;
 
@@ -24,7 +24,14 @@ public class RoslynService
     private readonly MemoryCache _assemblyAnalysisInfoCache = new(new MemoryCacheOptions());
     private readonly MemoryCache _assemblyAnalysisInfoPackageIdCache = new(new MemoryCacheOptions());
 
-    public async Task Initialize()
+    private readonly ILogger<RoslynService> _logger;
+
+    public RoslynService(Microsoft.Extensions.Logging.ILogger<RoslynService> logger)
+    {
+        _logger = logger;
+    }
+
+    public async Task InitializeAsync()
     {
         GlobalPackagePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
 
@@ -67,7 +74,7 @@ public class RoslynService
         }
         var result = await MetadataResource.GetMetadataAsync(packageId, includePrerelease, includeUnlisted: false, new SourceCacheContext(), NullLogger.Instance, cancellationToken);
         var list = result.ToList();
-        _metadataCache.Set(packageId, list, TimeSpan.FromMinutes(10));
+        _metadataCache.Set(packageId, list, TimeSpan.FromMinutes(30));
         return list;
     }
 
@@ -76,7 +83,8 @@ public class RoslynService
         var downloadResult = await DownloadResource.GetDownloadResourceResultAsync(
             id,
             new PackageDownloadContext(new SourceCacheContext()),
-            GlobalPackagePath, NullLogger.Instance, default);
+            GlobalPackagePath, NullLogger.Instance, cancellationToken);
+        _logger.LogInformation("下载NuGet包 {Status} {NuGetPackage}", downloadResult.Status, id.Id);
         return downloadResult;
     }
 
@@ -101,8 +109,8 @@ public class RoslynService
             return null;
         }
 
-        var attributes = assemblySymbol.GetAttributes();
-        bool isRefAssembly = attributes.Any(v => v?.AttributeClass?.ToString() == "System.Runtime.CompilerServices.ReferenceAssemblyAttribute");
+        var assemblyAttributes = assemblySymbol.GetAttributes();
+        bool isRefAssembly = assemblyAttributes.Any(v => v?.AttributeClass?.ToString() == "System.Runtime.CompilerServices.ReferenceAssemblyAttribute");
 
         AssemblyAnalysisInfo result = new()
         {

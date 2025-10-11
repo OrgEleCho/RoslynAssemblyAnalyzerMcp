@@ -7,20 +7,31 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Diagnostics.CodeAnalysis;
 using NuGet.Packaging;
+using Microsoft.Extensions.Logging;
 
 namespace RoslynAssemblyAnalyzerMcp;
 
 [McpServerToolType]
-public static class RoslynMcp
+public sealed class RoslynMcp(RoslynService roslynService, ILogger<RoslynMcp> logger)
 {
-    private static readonly RoslynService _service = new();
+    private readonly RoslynService _service = roslynService;
+    private readonly ILogger<RoslynMcp> _logger = logger;
 
     private const string PackageIdDescription = "NuGet PackageId (例如: 'Newtonsoft.Json', 'Microsoft.EntityFrameworkCore')";
     private const string AssemblyNameDescription = "程序集名(例如: 'System.Runtime.dll' 'Newtonsoft.Json.dll', 如果不填则使用和包名相同的程序集名)";
 
-    public static Task Initialize() => _service.Initialize();
+    private McpServerPrimitiveCollection<McpServerTool>? _toolsCache = null;
 
-    private static bool TryGetAnalyzeAssemblyCache(string packageId, string packageVersion, string assemblyName, string? targetFramework, [NotNullWhen(true)] out AssemblyAnalysisInfo? assemblyAnalysisInfo, [NotNullWhen(false)] out string? errorMessage)
+    public McpServerPrimitiveCollection<McpServerTool> GetMcpTools()
+    {
+        _toolsCache ??= [.. GetType().GetMethods()
+                .Where(v => v.CustomAttributes.Any(v => v.AttributeType == typeof(McpServerToolAttribute)))
+                .Select(v => McpServerTool.Create(v, target: this))
+                .ToArray()];
+        return _toolsCache;
+    }
+
+    private bool TryGetAnalyzeAssemblyCache(string packageId, string packageVersion, string assemblyName, string? targetFramework, [NotNullWhen(true)] out AssemblyAnalysisInfo? assemblyAnalysisInfo, [NotNullWhen(false)] out string? errorMessage)
     {
         var assemblyInfo = _service.GetAnalyzeAssemblyCache(packageId, packageVersion, assemblyName, targetFramework);
         if (assemblyInfo is null)
@@ -42,7 +53,7 @@ public static class RoslynMcp
         }
     }
 
-    private static string EnsureAssemblyName(string assemblyName)
+    private string EnsureAssemblyName(string assemblyName)
     {
         if (!assemblyName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) &&
              !assemblyName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
@@ -53,7 +64,7 @@ public static class RoslynMcp
     }
 
     [McpServerTool, Description("在NuGet上搜索包, 返回NuGet包基本信息")]
-    public static async Task<string> SearchNuGetPackage(
+    public async Task<string> SearchNuGetPackage(
         [Description("要搜索的包名或关键词 (例如：'json' 'entityframework')")] string searchText,
         [Description("返回的最大结果数量, 默认为 10")] int maxResults = 10)
     {
@@ -91,7 +102,7 @@ public static class RoslynMcp
 
 
     [McpServerTool, Description("获取指定 NuGet 包的详细元数据，包括最新版本、所有历史版本列表、作者、项目 URL、依赖项等完整信息")]
-    public static async Task<string> GetNuGetPackageDetails(
+    public async Task<string> GetNuGetPackageDetails(
         [Description(PackageIdDescription)] string packageId)
     {
         try
@@ -164,7 +175,7 @@ public static class RoslynMcp
 
 
     [McpServerTool, Description("获取NuGet包中所有程序集文件信息")]
-    public static async Task<string> GetPackageAssemblies(
+    public async Task<string> GetPackageAssemblies(
         [Description(PackageIdDescription)] string packageId,
         [Description("包的版本号, 如果不指定则使用最新版本")] string? packageVersion = null)
     {
@@ -256,7 +267,7 @@ public static class RoslynMcp
         }
     }
 
-    private static async Task<(AssemblyAnalysisInfo? AssemblyAnalysisInfo, string? ErrorMessage)> TryGetAssemblyAnalysisInfo(string packageId, string? assemblyName, string? packageVersion, string? targetFramework)
+    private async Task<(AssemblyAnalysisInfo? AssemblyAnalysisInfo, string? ErrorMessage)> TryGetAssemblyAnalysisInfo(string packageId, string? assemblyName, string? packageVersion, string? targetFramework)
     {
         if (string.IsNullOrWhiteSpace(assemblyName))
             assemblyName = packageId;
@@ -351,7 +362,7 @@ public static class RoslynMcp
 
 
     [McpServerTool, Description("分析并获取dotnet程序集的基本信息 (获取程序集的所有的类型个数, 命名空间, 引用信息等)")]
-    public static async Task<string> AnalyzeAssembly(
+    public async Task<string> AnalyzeAssembly(
         [Description(PackageIdDescription)] string packageId,
         [Description(AssemblyNameDescription)] string? assemblyName,
         [Description("包的版本号，如果不指定则使用最新版本")] string? packageVersion = null,
@@ -432,7 +443,7 @@ public static class RoslynMcp
 
 
     [McpServerTool, Description("获取dotnet程序集中指定类型的所有成员详细信息(方法 属性 字段 事件 以及对应的注释等)")]
-    public static async Task<string> GetTypeMembers(
+    public async Task<string> GetTypeMembers(
         [Description(PackageIdDescription)] string packageId,
         [Description(AssemblyNameDescription)] string? assemblyName,
         [Description("完整的类型名称，包括命名空间")] string typeName,
@@ -637,7 +648,7 @@ public static class RoslynMcp
 
 
     [McpServerTool, Description("在已解析的dotnet程序集中按模式搜索类型(支持通配符 *), 例如: 'Newtonsoft.*'查找所有以Newtonsoft开头的类型, '*Stream*'查找所有包含Stream的类型, 并获取类型的注释")]
-    public static async Task<string> SearchTypes(
+    public async Task<string> SearchTypes(
         [Description(PackageIdDescription)] string packageId,
         [Description(AssemblyNameDescription)] string? assemblyName = null,
         [Description("名称过滤器, 例如'Newtonsoft.Json'匹配类型全名包含'Newtonsoft.Json'的类型, 'Stream'匹配所有包含Stream的类型, 'Stream'相当于'*Stream*', 如果不填或填*则搜索所有类型")] string typeFullNameFilterText = "*",

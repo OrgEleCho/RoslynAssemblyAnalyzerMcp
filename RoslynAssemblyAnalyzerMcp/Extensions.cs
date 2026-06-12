@@ -228,11 +228,33 @@ internal static class Extensions
         /// 获取全名, 例如System.Int32, System.IO.Stream
         /// </summary>
         /// <returns></returns>
-        public string ToFullName() => $"{symbol.ContainingNamespace.ToDisplayStringOrEmpty() switch
+        public string ToFullName()
         {
-            "" => "",
-            var ns => $"{ns}.",
-        }}{symbol.Name}";
+            if (symbol.ContainingType is not null)
+            {
+                return $"{symbol.ContainingType.ToFullName()}.{symbol.Name}";
+            }
+
+            return $"{symbol.ContainingNamespace.ToDisplayStringOrEmpty() switch
+            {
+                "" => "",
+                var ns => $"{ns}.",
+            }}{symbol.Name}";
+        }
+
+        public string ToMetadataFullName()
+        {
+            if (symbol.ContainingType is not null)
+            {
+                return $"{symbol.ContainingType.ToMetadataFullName()}+{symbol.MetadataName}";
+            }
+
+            return $"{symbol.ContainingNamespace.ToDisplayStringOrEmpty() switch
+            {
+                "" => "",
+                var ns => $"{ns}.",
+            }}{symbol.MetadataName}";
+        }
 
         public IReadOnlyCollection<INamedTypeSymbol> GetInterfaces(bool includeBaseMembers = false)
         {

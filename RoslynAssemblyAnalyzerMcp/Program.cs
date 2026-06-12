@@ -1,45 +1,102 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using RoslynAssemblyAnalyzerMcp;
 using Serilog;
 using Serilog.Events;
 using System.Text.Encodings.Web;
 
-var builder = WebApplication.CreateBuilder(args);
+var serverOptions = ServerOptions.Parse(args);
 
-builder.Services.AddSerilog(configuration =>
+if (serverOptions.Transport == ServerTransport.Stdio)
 {
-    configuration.WriteTo.Console();
-    configuration.MinimumLevel.Override("Microsoft.AspNetCore.Hosting", LogEventLevel.Warning)
+    var builder = Host.CreateApplicationBuilder(args);
+    ConfigureServices(builder.Services);
+
+    builder.Logging.AddConsole(options =>
+    {
+        options.LogToStandardErrorThreshold = LogLevel.Trace;
+    });
+
+    builder.Services.AddMcpServer()
+        .WithStdioServerTransport()
+        .WithToolsFromAssembly();
+
+    var app = builder.Build();
+    await app.Services.GetRequiredService<RoslynService>().InitializeAsync();
+    await app.RunAsync();
+}
+else
+{
+    var builder = WebApplication.CreateBuilder(args);
+    ConfigureServices(builder.Services);
+
+    builder.Services.AddSerilog(configuration =>
+    {
+        configuration.WriteTo.Console();
+        configuration.MinimumLevel.Override("Microsoft.AspNetCore.Hosting", LogEventLevel.Warning)
             .MinimumLevel.Override("Microsoft.AspNetCore.Mvc", LogEventLevel.Warning)
             .MinimumLevel.Override("Microsoft.AspNetCore.Routing", LogEventLevel.Warning);
-});
-builder.Services.AddSingleton<RoslynService>();
-builder.Services.AddSingleton<RoslynMcp>();
+    });
 
-builder.Services.AddMcpServer()
-    .WithHttpTransport(options =>
+    builder.Services.AddMcpServer()
+        .WithHttpTransport()
+        .WithToolsFromAssembly();
+
+    builder.Services.ConfigureHttpJsonOptions(options =>
     {
-        options.ConfigureSessionOptions = async (httpContext, mcpOptions, cancellationToken) =>
-        {
-            var roslynMcp = httpContext.RequestServices.GetRequiredService<RoslynMcp>();
-            mcpOptions.ToolCollection = roslynMcp.GetMcpTools();
-        };
-    })
-    .WithToolsFromAssembly();
+        options.SerializerOptions.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+    });
 
-builder.Services.ConfigureHttpJsonOptions(options =>
+    var app = builder.Build();
+
+    app.UseSerilogRequestLogging();
+    app.MapMcp();
+
+    await app.Services.GetRequiredService<RoslynService>().InitializeAsync();
+    await app.RunAsync(serverOptions.HttpUrl);
+}
+
+static void ConfigureServices(IServiceCollection services)
 {
-    options.SerializerOptions.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
-});
+    services.AddSingleton<RoslynService>();
+    services.AddSingleton<RoslynMcp>();
+    services.AddSingleton<AssemblyDecompiler>();
+    services.AddSingleton<AssemblyResourceService>();
+}
 
-var app = builder.Build();
+internal enum ServerTransport
+{
+    Http,
+    Stdio
+}
 
-app.UseSerilogRequestLogging();
+internal sealed record ServerOptions(ServerTransport Transport, string HttpUrl)
+{
+    public static ServerOptions Parse(string[] args)
+    {
+        var transport = args.Any(arg => arg.Equals("--stdio", StringComparison.OrdinalIgnoreCase))
+            ? ServerTransport.Stdio
+            : ServerTransport.Http;
 
-app.MapMcp();
+        var httpUrl = GetOptionValue(args, "--url") ?? "http://localhost:43541";
+        return new ServerOptions(transport, httpUrl);
+    }
 
-await app.Services.GetRequiredService<RoslynService>().InitializeAsync();
+    private static string? GetOptionValue(string[] args, string optionName)
+    {
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (!args[i].Equals(optionName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
 
-app.Run("http://localhost:43541");
+            return i + 1 < args.Length ? args[i + 1] : null;
+        }
 
+        var prefix = $"{optionName}=";
+        return args.FirstOrDefault(arg => arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))?[prefix.Length..];
+    }
+}
